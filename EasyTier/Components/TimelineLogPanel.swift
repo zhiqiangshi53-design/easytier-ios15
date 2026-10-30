@@ -34,7 +34,7 @@ struct TimelineRow: View {
                 if let date = entry.date {
                     Text(date, style: .time) // e.g., 2:31 PM
                         .font(.caption)
-                        .fontWeight(.bold)
+                        .adaptiveFontWeight(.bold)
                         .foregroundStyle(.primary)
                     
                     Text(date.formatted(.dateTime.month().day())) // e.g., Jan 4
@@ -43,7 +43,7 @@ struct TimelineRow: View {
                 } else {
                     Text("not_available")
                         .font(.caption)
-                        .fontWeight(.bold)
+                        .adaptiveFontWeight(.bold)
                         .foregroundStyle(.primary)
                 }
             }

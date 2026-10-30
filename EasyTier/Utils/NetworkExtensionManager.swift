@@ -273,7 +273,7 @@ class NetworkExtensionManager: NetworkExtensionManagerProtocol {
         syncWidgetState()
 
         while [.connecting, .connected, .reasserting, .disconnecting].contains(connection.status) {
-            try? await Task.sleep(for: .milliseconds(100))
+            try? await Task.sleep(nanoseconds: 100_000_000)
         }
     }
     

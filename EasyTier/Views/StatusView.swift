@@ -47,8 +47,12 @@ struct StatusView<Manager: NetworkExtensionManagerProtocol>: View {
     var body: some View {
         Group {
             if sizeClass == .regular {
-                ViewThatFits(in: .horizontal) {
-                    doubleComlum
+                if #available(iOS 16.0, *) {
+                    ViewThatFits(in: .horizontal) {
+                        doubleComlum
+                        singleColumn
+                    }
+                } else {
                     singleColumn
                 }
             } else {
@@ -142,7 +146,7 @@ struct StatusView<Manager: NetworkExtensionManagerProtocol>: View {
             info
 #endif
         }
-        .formStyle(.grouped)
+        .adaptiveFormStyleGrouped()
     }
     
     var doubleComlum: some View {
@@ -167,14 +171,14 @@ struct StatusView<Manager: NetworkExtensionManagerProtocol>: View {
                 }
             }
             .frame(minWidth: columnMinWidth, maxWidth: columnMaxWidth)
-            .formStyle(.grouped)
+            .adaptiveFormStyleGrouped()
             Form {
                 Section("event_log") {
                     TimelineLogPanel(events: status?.events ?? [])
                 }
             }
             .frame(minWidth: columnMinWidth)
-            .formStyle(.grouped)
+            .adaptiveFormStyleGrouped()
         }
     }
     
@@ -192,7 +196,7 @@ struct StatusView<Manager: NetworkExtensionManagerProtocol>: View {
                     VStack(alignment: .leading, spacing: 4) {
                         Text(networkName)
                             .font(.title2)
-                            .fontWeight(.bold)
+                            .adaptiveFontWeight(.bold)
                         Text(status?.myNodeInfo?.version ?? String(localized: "not_available"))
                             .font(.caption)
                             .foregroundStyle(.secondary)
@@ -312,7 +316,7 @@ struct PeerRowView<RightView>: View where RightView: View {
             VStack(alignment: .leading, spacing: 4) {
                 Text(hostname)
                     .font(.body)
-                    .fontWeight(.medium)
+                    .adaptiveFontWeight(.medium)
                     .lineLimit(1)
                 
                 VStack(alignment: .leading, spacing: 4) {
@@ -454,7 +458,7 @@ struct RemotePeerRowView: View {
                             .font(.caption2)
                         Text("\(String(format: "%.1f", latency / 1000.0)) ms")
                             .font(.callout)
-                            .fontWeight(.semibold)
+                            .adaptiveFontWeight(.semibold)
                             .monospacedDigit()
                     }
                     .foregroundStyle(latencyColor(latency))
@@ -573,7 +577,7 @@ struct TrafficItem: View {
             HStack(alignment: .firstTextBaseline) {
                 Text(String(format: "%4.f", unifiedValue))
                     .font(.title3)
-                    .fontWeight(.medium)
+                    .adaptiveFontWeight(.medium)
                 Text(unit)
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
@@ -624,7 +628,7 @@ struct StatItem: View {
             }
             Text(value)
                 .font(.subheadline)
-                .fontWeight(.medium)
+                .adaptiveFontWeight(.medium)
                 .padding(.horizontal, 8)
         }
         .contentShape(Rectangle())
@@ -667,7 +671,7 @@ struct StatusBadge: View {
                 .frame(width: 8, height: 8)
             Text(status.rawValue)
                 .font(.caption)
-                .fontWeight(.bold)
+                .adaptiveFontWeight(.bold)
                 .foregroundStyle(badgeColor)
         }
         .padding(.horizontal, 10)

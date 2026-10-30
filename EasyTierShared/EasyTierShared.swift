@@ -270,11 +270,11 @@ private func configureManagerForConnection(_ manager: NETunnelProviderManager, l
         if #available(iOS 16.4, macOS 13.3, *) {
             manager.protocolConfiguration?.excludeCellularServices = defaults.bool(forKey: "excludeCellularServices")
             manager.protocolConfiguration?.excludeAPNs = defaults.bool(forKey: "excludeAPNs")
+            manager.protocolConfiguration?.enforceRoutes = defaults.bool(forKey: "enforceRoutes")
         }
         if #available(iOS 17.4, macOS 14.4, *) {
             manager.protocolConfiguration?.excludeDeviceCommunication = defaults.bool(forKey: "excludeDeviceCommunication")
         }
-        manager.protocolConfiguration?.enforceRoutes = defaults.bool(forKey: "enforceRoutes")
         if let logger {
             logger.debug("connect with protocol configuration: \(manager.protocolConfiguration)")
         }

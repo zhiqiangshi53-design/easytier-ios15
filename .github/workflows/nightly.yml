@@ -74,10 +74,8 @@ jobs:
 
           APP_PATH="${ARCHIVE_PATH}/Products/Applications/EasyTier.app"
           TUNNEL_PATH="${APP_PATH}/PlugIns/EasyTierNetworkExtension.appex"
-          WIDGET_PATH="${APP_PATH}/PlugIns/EasyTierWidgetExtension.appex"
           APP_ENTITLEMENTS="${RUNNER_TEMP}/EasyTier.signing.entitlements"
           TUNNEL_ENTITLEMENTS="${RUNNER_TEMP}/EasyTierNetworkExtension.signing.entitlements"
-          WIDGET_ENTITLEMENTS="${RUNNER_TEMP}/EasyTierWidgetExtension.signing.entitlements"
 
           create_signing_entitlements() {
             local source_path="$1"
@@ -110,18 +108,7 @@ jobs:
             EasyTierNetworkExtension/EasyTierNetworkExtension.entitlements \
             "${TUNNEL_PATH}" \
             "${TUNNEL_ENTITLEMENTS}"
-          create_signing_entitlements \
-            EasyTierWidgetExtension/EasyTierWidgetExtension.entitlements \
-            "${WIDGET_PATH}" \
-            "${WIDGET_ENTITLEMENTS}"
 
-          codesign \
-            --force \
-            --sign - \
-            --timestamp=none \
-            --generate-entitlement-der \
-            --entitlements "${WIDGET_ENTITLEMENTS}" \
-            "${WIDGET_PATH}"
           codesign \
             --force \
             --sign - \

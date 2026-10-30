@@ -44,9 +44,7 @@ struct ACLSettingsView: View {
                         addItemFactory: { ACLChain() },
                         showsAddButton: false,
                         rowContent: { chain in
-                            NavigationLink {
-                                ACLChainEditorView(chain: chain, groupNames: groupNames)
-                            } label: {
+                            NavigationLink(destination: ACLChainEditorView(chain: chain, groupNames: groupNames)) {
                                 ACLChainRow(chain: chain.wrappedValue)
                             }
                         })
@@ -59,9 +57,7 @@ struct ACLSettingsView: View {
                 }
 
                 Section {
-                    NavigationLink {
-                        ACLGroupEditorView(acl: aclBinding)
-                    } label: {
+                    NavigationLink(destination: ACLGroupEditorView(acl: aclBinding)) {
                         LabeledContent {
                             Text("\(groupNames.count)")
                                 .foregroundStyle(.secondary)
@@ -75,8 +71,8 @@ struct ACLSettingsView: View {
             }
         }
         .navigationTitle("acl.title")
-        .scrollDismissesKeyboard(.immediately)
-        .formStyle(.grouped)
+        .adaptiveScrollDismissesKeyboard()
+        .adaptiveFormStyleGrouped()
         .confirmationDialog(
             "acl.disable_confirmation",
             isPresented: $showDisableConfirmation,
@@ -203,15 +199,13 @@ private struct ACLChainEditorView: View {
             }
 
             Section("acl.chain_description") {
-                TextField("acl.chain_description_placeholder", text: $chain.description, axis: .vertical)
-                    .lineLimit(2...4)
+                MultilineTextField("acl.chain_description_placeholder", text: $chain.description)
+                    .lineLimit(4)
             }
 
             Section {
                 ForEach($chain.rules) { $rule in
-                    NavigationLink {
-                        ACLRuleEditorView(rule: $rule, groupNames: groupNames)
-                    } label: {
+                    NavigationLink(destination: ACLRuleEditorView(rule: $rule, groupNames: groupNames)) {
                         ACLRuleRow(rule: rule)
                     }
                     .contextMenu {
@@ -237,8 +231,8 @@ private struct ACLChainEditorView: View {
             }
         }
         .navigationTitle(chain.name.isEmpty ? "ACL Chain" : chain.name)
-        .scrollDismissesKeyboard(.immediately)
-        .formStyle(.grouped)
+        .adaptiveScrollDismissesKeyboard()
+        .adaptiveFormStyleGrouped()
         .listEditingToolbar(isVisible: !chain.rules.isEmpty)
     }
 
@@ -351,8 +345,8 @@ private struct ACLRuleEditorView: View {
             }
 
             Section("acl.rule_description") {
-                TextField("acl.rule_description_placeholder", text: $rule.description, axis: .vertical)
-                    .lineLimit(2...4)
+                MultilineTextField("acl.rule_description_placeholder", text: $rule.description)
+                    .lineLimit(4)
             }
 
             ACLStringListEditor(
@@ -422,8 +416,8 @@ private struct ACLRuleEditorView: View {
             }
         }
         .navigationTitle(rule.name.isEmpty ? String(localized: "acl.edit_rule") : rule.name)
-        .scrollDismissesKeyboard(.immediately)
-        .formStyle(.grouped)
+        .adaptiveScrollDismissesKeyboard()
+        .adaptiveFormStyleGrouped()
         .onChange(of: rule.rateLimit) { newValue in
             if newValue > 0 && rule.burstLimit == 0 {
                 rule.burstLimit = max(1, newValue)
@@ -579,8 +573,8 @@ private struct ACLGroupEditorView: View {
             }
         }
         .navigationTitle("acl.groups")
-        .scrollDismissesKeyboard(.immediately)
-        .formStyle(.grouped)
+        .adaptiveScrollDismissesKeyboard()
+        .adaptiveFormStyleGrouped()
         .listEditingToolbar(isVisible: !acl.aclV1.group.declares.isEmpty)
         .sheet(item: $editingGroup) { context in
             NavigationStack {
@@ -731,7 +725,7 @@ private struct ACLGroupIdentityEditorView: View {
         }
         .navigationTitle("acl.edit_group")
         .adaptiveNavigationBarTitleInline()
-        .formStyle(.grouped)
+        .adaptiveFormStyleGrouped()
         .toolbar {
             ToolbarItem(placement: .cancellationAction) {
                 Button {

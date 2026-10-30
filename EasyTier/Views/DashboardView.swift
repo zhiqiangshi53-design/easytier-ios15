@@ -213,7 +213,7 @@ struct DashboardView<Manager: NetworkExtensionManagerProtocol>: View {
                     }
                 }
             }
-            .formStyle(.grouped)
+            .adaptiveFormStyleGrouped()
         } else {
             WebManagementEditView(
                 server: $webServer,
@@ -449,7 +449,7 @@ struct DashboardView<Manager: NetworkExtensionManagerProtocol>: View {
 #endif
                 }
             }
-            .formStyle(.grouped)
+            .adaptiveFormStyleGrouped()
             .navigationTitle("device.management")
             .adaptiveNavigationBarTitleInline()
             .toolbar {
@@ -491,8 +491,10 @@ struct DashboardView<Manager: NetworkExtensionManagerProtocol>: View {
                 .navigationTitle(connectionMode == .web ? String(localized: "web_management.title") : (selectedSession.session?.name ?? String(localized: "select_network")))
             .toolbar {
                 ToolbarItem(placement: ToolbarLeading) {
-                    Button("select_network", systemImage: "chevron.up.chevron.down") {
+                    Button {
                         showManageSheet = true
+                    } label: {
+                        Label("select_network", systemImage: "chevron.up.chevron.down")
                     }
                     .disabled(isPending || isConnected)
                 }
@@ -562,7 +564,7 @@ struct DashboardView<Manager: NetworkExtensionManagerProtocol>: View {
             webStatusTask = Task { @MainActor in
                 while !Task.isCancelled {
                     refreshWebStatus()
-                    try? await Task.sleep(for: .seconds(2))
+                    try? await Task.sleep(nanoseconds: 2_000_000_000)
                 }
             }
         }

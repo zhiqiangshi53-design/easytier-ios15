@@ -1,3 +1,6 @@
+// App Intents require iOS 16+ (some APIs iOS 18+). Linking AppIntents strongly
+// breaks launch on iOS 15, so this file is compiled only when the build opts in.
+#if ENABLE_APP_INTENTS
 import AppIntents
 import EasyTierShared
 import NetworkExtension
@@ -204,3 +207,5 @@ struct EasyTierShortcuts: AppShortcutsProvider {
         )
     }
 }
+
+#endif

@@ -62,7 +62,7 @@ struct WebManagementEditView: View {
                 }
             }
         }
-        .formStyle(.grouped)
+        .adaptiveFormStyleGrouped()
         .alert("web_management.machine_id.reset_confirm_title", isPresented: $showResetMachineIDAlert) {
             Button("common.cancel", role: .cancel) {}
             Button("reset", role: .destructive) {

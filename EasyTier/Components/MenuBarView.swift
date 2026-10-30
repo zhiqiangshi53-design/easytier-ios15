@@ -280,7 +280,7 @@ struct MenuBarView<Manager: NetworkExtensionManagerProtocol>: View {
     private func refreshStatusLoop() async {
         while !Task.isCancelled {
             refreshStatus()
-            try? await Task.sleep(for: .seconds(1))
+            try? await Task.sleep(nanoseconds: 1_000_000_000)
         }
     }
 }
