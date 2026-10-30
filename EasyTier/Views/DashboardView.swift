@@ -516,6 +516,7 @@ struct DashboardView<Manager: NetworkExtensionManagerProtocol>: View {
                                 if ready {
                                     do {
                                         try await manager.connect()
+                                        scheduleConnectDiagnostics()
                                     } catch {
                                         dashboardLogger.error("connect failed: \(error)")
                                         errorMessage = .init(error.localizedDescription)

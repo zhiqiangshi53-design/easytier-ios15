@@ -176,6 +176,34 @@ extension DashboardView {
     }
 
     @MainActor
+    func scheduleConnectDiagnostics() {
+        Task { @MainActor in
+            try? await Task.sleep(nanoseconds: 6_000_000_000)
+            guard !isConnected, manager.status == .disconnected || manager.status == .invalid else {
+                return
+            }
+            let groupDefaults = UserDefaults(suiteName: APP_GROUP_ID)
+            let groupAvailable = FileManager.default.containerURL(
+                forSecurityApplicationGroupIdentifier: APP_GROUP_ID) != nil
+            let lastError = groupDefaults?.string(forKey: "TunnelLastError")
+            let trace = groupDefaults?.stringArray(forKey: "TunnelTrace") ?? []
+            var lines: [String] = []
+            lines.append("VPN 状态：\(manager.status.rawValue)")
+            lines.append("共享容器：\(groupAvailable ? "可用" : "不可用")")
+            if let lastError, !lastError.isEmpty {
+                lines.append("扩展错误：\(lastError)")
+            }
+            if trace.isEmpty {
+                lines.append("VPN 扩展没有留下任何启动记录，系统很可能没有成功启动它。")
+            } else {
+                lines.append("最近启动记录：")
+                lines.append(contentsOf: trace.suffix(10))
+            }
+            errorMessage = .init(lines.joined(separator: "\n"))
+        }
+    }
+
+    @MainActor
     @discardableResult
     func closeSelectedSession(save: Bool = true) async -> Bool {
         await replaceSelectedProfile(named: nil, saveCurrent: save)

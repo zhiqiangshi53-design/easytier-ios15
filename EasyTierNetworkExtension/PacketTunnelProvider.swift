@@ -9,6 +9,18 @@ let loggerSubsystem = "\(APP_BUNDLE_ID).tunnel"
 let debounceInterval = 0.5
 let logger = Logger(subsystem: loggerSubsystem, category: "swift")
 
+// Lightweight breadcrumb trail kept in shared defaults so the host app can
+// explain why the tunnel stopped when no core log exists yet.
+func tunnelTrace(_ message: String) {
+    let stamp = ISO8601DateFormatter().string(from: Date())
+    logger.warning("TRACE \(message, privacy: .public)")
+    guard let defaults = UserDefaults(suiteName: APP_GROUP_ID) else { return }
+    var lines = defaults.stringArray(forKey: "TunnelTrace") ?? []
+    lines.append("\(stamp) \(message)")
+    defaults.set(Array(lines.suffix(40)), forKey: "TunnelTrace")
+    defaults.synchronize()
+}
+
 private struct ProviderMessageResponse: Codable {
     let ok: Bool
     let path: String?
@@ -115,11 +127,17 @@ class PacketTunnelProvider: NEPacketTunnelProvider {
               pendingStartCompletion.generation == generation else {
             return
         }
+        if let error {
+            tunnelTrace("completeStart error: \(error.localizedDescription)")
+        } else {
+            tunnelTrace("completeStart ok")
+        }
         self.pendingStartCompletion = nil
         pendingStartCompletion.completion.finish(error)
     }
 
     private func failStart(generation: UInt64, error: Error, stopNetwork: Bool) {
+        tunnelTrace("failStart: \(error.localizedDescription)")
         guard activeTunnelGeneration == generation else {
             completeStart(generation: generation, error: error)
             return
@@ -166,6 +184,7 @@ class PacketTunnelProvider: NEPacketTunnelProvider {
         settingsApplyGeneration = generation
         let instanceGeneration = tunnelSession?.instanceGeneration
         reasserting = true
+        tunnelTrace("applyNetworkSettings begin")
 
         settingsQueue.asyncAfter(deadline: .now() + debounceInterval) { [weak self] in
             guard let self else {
@@ -286,6 +305,7 @@ class PacketTunnelProvider: NEPacketTunnelProvider {
                         }
                     }
                     logger.info("applyNetworkSettings() settings applied")
+                    tunnelTrace("settings applied; ipv4=\(newSnapshot.ipv4 != nil); tunfd=\(needSetTunFd)")
                     if needSetTunFd { self.tunnelSession?.needsTunRebind = false }
                     self.finishNetworkSettingsApply(
                         generation: generation,
@@ -446,10 +466,13 @@ class PacketTunnelProvider: NEPacketTunnelProvider {
             }
         }
         guard result == 0 else {
+            let message = extractRustString(errPtr) ?? "cannot start tunnel"
+            tunnelTrace("run_network_instance failed: \(message)")
             failStart(generation: generation,
-                error: extractRustString(errPtr) ?? "cannot start tunnel", stopNetwork: false)
+                error: message, stopNetwork: false)
             return
         }
+        tunnelTrace("run_network_instance ok")
         if options.mode == .local {
             // Local startup completes only after its run event is applied.
             tunnelSession?.phase = .ready
@@ -512,21 +535,46 @@ class PacketTunnelProvider: NEPacketTunnelProvider {
             PacketTunnelProvider.current = self
 
             let defaults = UserDefaults(suiteName: APP_GROUP_ID)
-            guard let configData = defaults?.data(forKey: "VPNConfig"),
-                  let options = try? JSONDecoder().decode(EasyTierOptions.self, from: configData) else {
-                let message = "options is nil"
+            if let defaults {
+                defaults.removeObject(forKey: "TunnelLastError")
+                defaults.removeObject(forKey: "TunnelTrace")
+                defaults.synchronize()
+            }
+            let groupAvailable = FileManager.default.containerURL(
+                forSecurityApplicationGroupIdentifier: APP_GROUP_ID) != nil
+            tunnelTrace("startTunnel entered; group=\(groupAvailable ? "ok" : "missing"); bundle=\(Bundle.main.bundleIdentifier ?? "nil")")
+
+            var decodedOptions: EasyTierOptions?
+            var source = "none"
+            if let providerConfiguration = (self.protocolConfiguration as? NETunnelProviderProtocol)?.providerConfiguration,
+               let payload = providerConfiguration["options"] as? Data,
+               let decoded = try? JSONDecoder().decode(EasyTierOptions.self, from: payload) {
+                decodedOptions = decoded
+                source = "providerConfiguration"
+            } else if let configData = defaults?.data(forKey: "VPNConfig"),
+                      let decoded = try? JSONDecoder().decode(EasyTierOptions.self, from: configData) {
+                decodedOptions = decoded
+                source = "appGroup"
+            }
+
+            guard let options = decodedOptions else {
+                let message = "options is nil (group=\(groupAvailable ? "ok" : "missing"))"
+                tunnelTrace(message)
                 logger.error("startTunnel() options is nil")
                 self.notifyHostAppError(message)
                 self.failStart(generation: generation, error: message, stopNetwork: false)
                 return
             }
+            tunnelTrace("options decoded from \(source); configChars=\(options.config.count); mode=\(options.mode.rawValue)")
             initRustLogger(level: options.logLevel)
+            tunnelTrace("rust logger initialized")
             self.startConfiguredTunnel(options: options, generation: generation)
         }
     }
     
     override func stopTunnel(with reason: NEProviderStopReason, completionHandler: @escaping () -> Void) {
         logger.warning("stopTunnel(): triggered")
+        tunnelTrace("stopTunnel reason=\(reason.rawValue)")
         settingsQueue.async {
             self.tunnelGeneration &+= 1
             self.activeTunnelGeneration = nil

@@ -155,12 +155,17 @@ class NetworkExtensionManager: NetworkExtensionManagerProtocol {
         Self.logger.info("load()")
         do {
             let managers = try await NETunnelProviderManager.loadAllFromPreferences()
-            let manager = managers.first
-            for m in managers {
-                if m != manager {
-                    try? await m.removeFromPreferences()
-                    Self.logger.info("load() removed unnecessary profile")
-                }
+            let expectedProvider = "\(APP_BUNDLE_ID).tunnel"
+            let manager = managers.first { candidate in
+                (candidate.protocolConfiguration as? NETunnelProviderProtocol)?
+                    .providerBundleIdentifier == expectedProvider
+            }
+            // Profiles that point at another app's extension (for example a
+            // leftover from an older bundle id) can never start, so drop them
+            // and let connect() install a fresh configuration.
+            for m in managers where m !== manager {
+                try? await m.removeFromPreferences()
+                Self.logger.info("load() removed stale profile")
             }
             setManager(manager: manager)
             isLoading = false
@@ -226,7 +231,21 @@ class NetworkExtensionManager: NetworkExtensionManagerProtocol {
             logger.debug("save options: \(configData.string ?? "nil")")
             defaults?.set(configData, forKey: "VPNConfig")
             defaults?.synchronize()
+            // Re-signed builds (TrollStore/ad-hoc) may not expose the shared
+            // container, so keep a copy in the app's own defaults and hand it
+            // to the extension through NETunnelProviderProtocol instead.
+            UserDefaults.standard.set(configData, forKey: "VPNConfigPayload")
         }
+    }
+
+    private func injectOptions(into manager: NETunnelProviderManager) {
+        guard let payload = UserDefaults.standard.data(forKey: "VPNConfigPayload"),
+              let protocolConfiguration = manager.protocolConfiguration as? NETunnelProviderProtocol else {
+            return
+        }
+        var configuration = protocolConfiguration.providerConfiguration ?? [:]
+        configuration["options"] = payload
+        protocolConfiguration.providerConfiguration = configuration
     }
     
     func connect() async throws {
@@ -247,13 +266,33 @@ class NetworkExtensionManager: NetworkExtensionManagerProtocol {
             return
         }
 
+        // Clear any stale failure state before a new attempt.
+        if let defaults = UserDefaults(suiteName: APP_GROUP_ID) {
+            defaults.removeObject(forKey: "TunnelLastError")
+            defaults.set(["app: connect requested"], forKey: "TunnelTrace")
+            defaults.synchronize()
+        }
+        injectOptions(into: manager)
+
         do {
             try await connectWithManager(manager, logger: Self.logger)
         } catch {
             Self.logger.error("connect() start vpn tunnel failed: \(String(describing: error))")
+            if let defaults = UserDefaults(suiteName: APP_GROUP_ID) {
+                var lines = defaults.stringArray(forKey: "TunnelTrace") ?? []
+                lines.append("app: startVPNTunnel threw: \(error.localizedDescription)")
+                defaults.set(Array(lines.suffix(40)), forKey: "TunnelTrace")
+                defaults.synchronize()
+            }
             throw error
         }
         Self.logger.info("connect() started")
+        if let defaults = UserDefaults(suiteName: APP_GROUP_ID) {
+            var lines = defaults.stringArray(forKey: "TunnelTrace") ?? []
+            lines.append("app: startVPNTunnel returned")
+            defaults.set(Array(lines.suffix(40)), forKey: "TunnelTrace")
+            defaults.synchronize()
+        }
         // Immediately sync widget state after initiating connection
         syncWidgetState()
     }
