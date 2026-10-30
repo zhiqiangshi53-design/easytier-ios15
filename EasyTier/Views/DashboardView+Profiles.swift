@@ -1,4 +1,5 @@
 import SwiftUI
+import NetworkExtension
 import os
 import EasyTierShared
 
