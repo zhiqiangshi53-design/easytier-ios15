@@ -406,13 +406,33 @@ nonisolated struct NetworkProfile: Identifiable, Equatable {
     }
 
     mutating func prepareForUse() throws {
+        networkName = Self.normalizedIdentityField(networkName)
+        networkSecret = Self.normalizedIdentityField(networkSecret)
+        for index in listenerURLs.indices {
+            listenerURLs[index].text = listenerURLs[index].text.trimmingCharacters(in: .whitespacesAndNewlines)
+        }
+        for index in mappedListeners.indices {
+            mappedListeners[index].text = mappedListeners[index].text.trimmingCharacters(in: .whitespacesAndNewlines)
+        }
         for index in peerConfigs.indices {
+            peerConfigs[index].uri = peerConfigs[index].uri.trimmingCharacters(in: .whitespacesAndNewlines)
             peerConfigs[index].peerPublicKey = try Self.normalizedPeerPublicKey(
                 peerConfigs[index].peerPublicKey,
                 peerURI: peerConfigs[index].uri
             )
         }
         try prepareSecureModeKeys()
+    }
+
+    /// A trailing space or zero-width character is invisible in the editor but
+    /// changes the EasyTier network identity, which silently puts the device in
+    /// an isolated network that shares the display name. Normalize both fields
+    /// before they reach the core or get persisted.
+    static func normalizedIdentityField(_ value: String) -> String {
+        let invisible: Set<Unicode.Scalar> = ["\u{200B}", "\u{200C}", "\u{200D}", "\u{FEFF}"]
+        let scalars = value.unicodeScalars.filter { !invisible.contains($0) }
+        return String(String.UnicodeScalarView(scalars))
+            .trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
     mutating func updateSecureModePrivateKey(_ value: String) {
