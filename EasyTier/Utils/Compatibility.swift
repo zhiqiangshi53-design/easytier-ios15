@@ -26,7 +26,9 @@ import SwiftUI
 
         var body: some View {
             if #available(iOS 16.0, *) {
-                SwiftUI.NavigationStack(content: content)
+                SwiftUI.NavigationStack {
+                    content()
+                }
             } else {
                 NavigationView {
                     content()

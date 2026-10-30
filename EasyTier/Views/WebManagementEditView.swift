@@ -20,11 +20,9 @@ struct WebManagementEditView: View {
         Form {
             Section {
                 LabeledContent("web_management.server.placeholder") {
-                    TextField(
-                        "tcp://et-web.console.easytier.net:22020/your_token",
-                        text: $server,
-                        prompt: Text("tcp://localhost:22020/your_token"),
-                        axis: .vertical
+                    MultilineTextField(
+                        "tcp://localhost:22020/your_token",
+                        text: $server
                     )
                     .labelsHidden()
                     .multilineTextAlignment(.trailing)

@@ -257,14 +257,12 @@ struct NetworkEditView: View {
                 )
                 if profile.enableSecureMode {
                     LabeledContent("local_private_key") {
-                        TextField(
+                        MultilineTextField(
                             "common_text.empty",
                             text: Binding(
                                 get: { profile.secureModeLocalPrivateKey },
                                 set: { profile.updateSecureModePrivateKey($0) }
-                            ),
-                            prompt: Text("common_text.empty"),
-                            axis: .vertical
+                            )
                         )
                         .labelsHidden()
                         .font(.body.monospaced())
@@ -686,11 +684,9 @@ struct PeerPublicKeyEditor: View {
                 }
 
                 Section {
-                    TextField(
+                    MultilineTextField(
                         "peer_public_key",
-                        text: $publicKey,
-                        prompt: Text("peer_public_key"),
-                        axis: .vertical
+                        text: $publicKey
                     )
                     .labelsHidden()
                     .font(.body.monospaced())
