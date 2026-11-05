@@ -7,8 +7,8 @@ let sharedDefaults = UserDefaults(suiteName: APP_GROUP_ID)
 struct SettingsView<Manager: NetworkExtensionManagerProtocol>: View {
     @ObservedObject var manager: Manager
     @ObservedObject var selectedSession: SelectedProfileSession
-    @AppStorage("logLevel") var logLevel: LogLevel = .info
-    @AppStorage("statusRefreshInterval") var statusRefreshInterval: Double = 1.0
+    @AppStorage("logLevel") var logLevel: LogLevel = .warn
+    @AppStorage("statusRefreshInterval") var statusRefreshInterval: Double = 5.0
     @AppStorage("logPreservedLines") var logPreservedLines: Int = 1000
     @AppStorage("useRealDeviceNameAsDefault") var useRealDeviceNameAsDefault: Bool = true
 #if os(iOS)
@@ -161,10 +161,10 @@ struct SettingsView<Manager: NetworkExtensionManagerProtocol>: View {
                 LabeledContent("status_refresh_rate") {
                     HStack {
                         TextField(
-                            "1.0",
+                            "5.0",
                             value: $statusRefreshInterval,
                             formatter: NumberFormatter(),
-                            prompt: Text("1.0")
+                            prompt: Text("5.0")
                         )
                         .labelsHidden()
                         .contentShape(Rectangle())

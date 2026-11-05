@@ -13,7 +13,17 @@ use tracing_oslog::OsLogger;
 use tracing_subscriber::layer::SubscriberExt as _;
 use uuid::Uuid;
 
-type SharedLogFile = Arc<Mutex<File>>;
+// Keep the on-device log bounded. Long-lived tunnels used to grow the core
+// log into the hundreds of megabytes, which keeps the flash and CPU busy and
+// is a large part of the extension's standby energy use.
+const MAX_LOG_BYTES: u64 = 4 * 1024 * 1024;
+
+struct LogFileState {
+    file: File,
+    written: u64,
+}
+
+type SharedLogFile = Arc<Mutex<LogFileState>>;
 type InstanceCallback = Option<extern "C" fn(*const c_char)>;
 
 struct CoreContext {
@@ -103,10 +113,18 @@ impl<'a> tracing_subscriber::fmt::MakeWriter<'a> for SharedLogWriter {
 
 impl Write for SharedLogWriteGuard {
     fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
-        self.file.lock().map_err(lock_io_error)?.write(buf)
+        let mut state = self.file.lock().map_err(lock_io_error)?;
+        if state.written.saturating_add(buf.len() as u64) > MAX_LOG_BYTES {
+            state.file.set_len(0)?;
+            state.file.seek(SeekFrom::Start(0))?;
+            state.written = 0;
+        }
+        let written = state.file.write(buf)?;
+        state.written += written as u64;
+        Ok(written)
     }
     fn flush(&mut self) -> io::Result<()> {
-        self.file.lock().map_err(lock_io_error)?.flush()
+        self.file.lock().map_err(lock_io_error)?.file.flush()
     }
 }
 
@@ -163,9 +181,13 @@ pub extern "C" fn init_logger(
         let path = unsafe { CStr::from_ptr(path) }.to_string_lossy();
         let level = unsafe { CStr::from_ptr(level) }.to_string_lossy();
         let subsystem = unsafe { CStr::from_ptr(subsystem) }.to_string_lossy();
-        let file = Arc::new(Mutex::new(
-            File::create(path.as_ref()).map_err(|error| error.to_string())?,
-        ));
+        let file = Arc::new(Mutex::new(LogFileState {
+            file: File::create(path.as_ref()).map_err(|error| error.to_string())?,
+            written: 0,
+        }));
+        // System logging duplicates every line into oslog, which costs an IPC
+        // and a logd wakeup per event. Only mirror there while debugging.
+        let mirror_to_oslog = level.contains("debug") || level.contains("trace");
         let collector = tracing_subscriber::registry()
             .with(tracing_subscriber::EnvFilter::new(level.as_ref()))
             .with(
@@ -173,7 +195,7 @@ pub extern "C" fn init_logger(
                     .with_writer(SharedLogWriter { file: file.clone() })
                     .with_ansi(false),
             )
-            .with(OsLogger::new(subsystem.as_ref(), "rust"));
+            .with(mirror_to_oslog.then(|| OsLogger::new(subsystem.as_ref(), "rust")));
         tracing::subscriber::set_global_default(collector).map_err(|error| error.to_string())?;
         *LOGGER_FILE.lock().map_err(|error| error.to_string())? = Some(file);
         Ok(())
@@ -190,11 +212,17 @@ pub extern "C" fn clear_logger(err_msg: *mut *const c_char) -> c_int {
                 .map_err(|error| error.to_string())?
                 .clone()
                 .ok_or_else(|| "logger is not initialized".to_string())?;
-            let mut file = file.lock().map_err(|error| error.to_string())?;
-            file.set_len(0).map_err(|error| error.to_string())?;
-            file.seek(SeekFrom::Start(0))
+            let mut state = file.lock().map_err(|error| error.to_string())?;
+            state
+                .file
+                .set_len(0)
                 .map_err(|error| error.to_string())?;
-            file.flush().map_err(|error| error.to_string())
+            state
+                .file
+                .seek(SeekFrom::Start(0))
+                .map_err(|error| error.to_string())?;
+            state.written = 0;
+            state.file.flush().map_err(|error| error.to_string())
         })(),
         err_msg,
     )
@@ -455,8 +483,12 @@ pub extern "C" fn get_running_info(json: *mut *const c_char, err_msg: *mut *cons
                 return Err("json is null".to_string());
             }
             let (manager, id) = active_instance()?;
-            let infos = manager
-                .collect_network_infos_sync()
+            // `collect_network_infos_sync` builds and tears down a whole tokio
+            // runtime per call. The status view polls this, so use the shared
+            // runtime instead.
+            let infos = CONTEXT
+                .runtime
+                .block_on(manager.collect_network_infos())
                 .map_err(|error| error.to_string())?;
             let info = infos
                 .get(&id)

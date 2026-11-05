@@ -11,8 +11,8 @@ struct StatusView<Manager: NetworkExtensionManagerProtocol>: View {
     @ObservedObject var manager: Manager
     @Environment(\.scenePhase) var scenePhase
     @Environment(\.horizontalSizeClass) var sizeClass
-    @AppStorage("statusRefreshInterval") var statusRefreshInterval: Double = 1.0
-    @State var timer = Timer.publish(every: 1.0, on: .main, in: .common)
+    @AppStorage("statusRefreshInterval") var statusRefreshInterval: Double = 5.0
+    @State var timer = Timer.publish(every: 5.0, on: .main, in: .common)
     @State var timerSubscription: Cancellable?
     @State var status: NetworkStatus?
     
@@ -276,7 +276,8 @@ struct StatusView<Manager: NetworkExtensionManagerProtocol>: View {
 
     func startTimer() {
         guard timerSubscription == nil else { return }
-        let interval = max(0.2, statusRefreshInterval)
+        // Every tick wakes the tunnel extension, so keep a sane floor.
+        let interval = max(1.0, statusRefreshInterval)
         timer = Timer.publish(every: interval, on: .main, in: .common)
         timerSubscription = timer.connect()
     }

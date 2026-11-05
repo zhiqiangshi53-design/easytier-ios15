@@ -53,7 +53,7 @@ public struct EasyTierOptions: Codable {
     public var ipv6: String?
     public var mtu: Int?
     public var routes: [String] = []
-    public var logLevel: LogLevel = .info
+    public var logLevel: LogLevel = .warn
     public var magicDNS: Bool = false
     public var dns: [String] = []
 
@@ -72,7 +72,7 @@ public struct EasyTierOptions: Codable {
         ipv6 = try container.decodeIfPresent(String.self, forKey: .ipv6)
         mtu = try container.decodeIfPresent(Int.self, forKey: .mtu)
         routes = try container.decodeIfPresent([String].self, forKey: .routes) ?? []
-        logLevel = try container.decodeIfPresent(LogLevel.self, forKey: .logLevel) ?? .info
+        logLevel = try container.decodeIfPresent(LogLevel.self, forKey: .logLevel) ?? .warn
         magicDNS = try container.decodeIfPresent(Bool.self, forKey: .magicDNS) ?? false
         dns = try container.decodeIfPresent([String].self, forKey: .dns) ?? []
     }

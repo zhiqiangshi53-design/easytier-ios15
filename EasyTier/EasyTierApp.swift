@@ -47,8 +47,8 @@ struct EasyTierApp: App {
 
     init() {
         let values: [String: Any] = [
-            "logLevel": LogLevel.info.rawValue,
-            "statusRefreshInterval": 1.0,
+            "logLevel": LogLevel.warn.rawValue,
+            "statusRefreshInterval": 5.0,
             "logPreservedLines": 1000,
             "useRealDeviceNameAsDefault": true,
             "plainTextIPInput": false,
@@ -64,6 +64,14 @@ struct EasyTierApp: App {
         ]
         UserDefaults.standard.register(defaults: values)
         UserDefaults(suiteName: APP_GROUP_ID)?.register(defaults: sharedValues)
+        // Existing installs keep their previously written preferences. Move
+        // them to the low-power profile once; both values stay adjustable in
+        // Settings afterwards.
+        if !UserDefaults.standard.bool(forKey: "energyProfileApplied") {
+            UserDefaults.standard.set(LogLevel.warn.rawValue, forKey: "logLevel")
+            UserDefaults.standard.set(5.0, forKey: "statusRefreshInterval")
+            UserDefaults.standard.set(true, forKey: "energyProfileApplied")
+        }
     }
 
     var body: some Scene {
