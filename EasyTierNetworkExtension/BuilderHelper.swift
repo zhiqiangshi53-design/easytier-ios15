@@ -1,3 +1,4 @@
+import Darwin
 import NetworkExtension
 import Network
 import os
@@ -30,11 +31,37 @@ func buildSettings(_ options: EasyTierOptions) -> NEPacketTunnelNetworkSettings 
     } else {
         ipv4Settings = nil
     }
-    let routes = buildIPv4Routes(info: runningInfo, options: options)
+    var routes = buildIPv4RouteCIDRs(info: runningInfo, options: options)
     if let ipv4Settings, !routes.isEmpty {
-        logger.info("prepareSettings() ipv4 routes: \(routes.count)")
-        ipv4Settings.includedRoutes = routes
-        settings.ipv4Settings = ipv4Settings
+        // Office/home Wi-Fi often shares the subnet a peer proxies (e.g. both
+        // sides are 192.168.119.0/24). Without an exclusion every LAN packet
+        // would be pulled into the tunnel, which stalls the local network and
+        // usually kills the tunnel itself. Excluded routes win over included
+        // ones, so on-link traffic stays on the physical interface.
+        let excluded = buildExcludedRouteCIDRs(tunnelAddress: ipv4Settings.addresses.first)
+        if !excluded.isEmpty {
+            let isCovered: (RunningIPv4CIDR) -> Bool = { route in
+                excluded.contains { subnet in
+                    subnet.networkLength <= route.networkLength
+                        && ipv4SubnetsOverlap(bigger: subnet, smaller: route)
+                }
+            }
+            let covered = routes.filter(isCovered)
+            if !covered.isEmpty {
+                logger.warning("prepareSettings() local subnet overrides tunnel routes: \(covered.map { "\($0.address.description)/\($0.networkLength)" }.joined(separator: ","), privacy: .public)")
+                routes.removeAll(where: isCovered)
+            }
+            // An empty includedRoutes means "route everything through the
+            // tunnel", so only publish IPv4 settings while routes remain.
+            if !routes.isEmpty {
+                ipv4Settings.excludedRoutes = excluded.compactMap(cidrToRoute)
+            }
+        }
+        if !routes.isEmpty {
+            logger.info("prepareSettings() ipv4 routes: \(routes.count)")
+            ipv4Settings.includedRoutes = routes.compactMap(cidrToRoute)
+            settings.ipv4Settings = ipv4Settings
+        }
     }
 
     if let ipv6CIDR = options.ipv6?.split(separator: "/"), ipv6CIDR.count == 2 {
@@ -73,7 +100,7 @@ func buildSettings(_ options: EasyTierOptions) -> NEPacketTunnelNetworkSettings 
     return settings
 }
 
-func buildIPv4Routes(info: RunningInfo?, options: EasyTierOptions) -> [NEIPv4Route] {
+func buildIPv4RouteCIDRs(info: RunningInfo?, options: EasyTierOptions) -> [RunningIPv4CIDR] {
     var cidrs = Set<RunningIPv4CIDR>()
     // Additive: manual routes used to replace the derived ones, which made every peer's
     // proxied subnet unreachable as soon as one manual route existed. includedRoutes is the
@@ -128,13 +155,80 @@ func buildIPv4Routes(info: RunningInfo?, options: EasyTierOptions) -> [NEIPv4Rou
     for index in indicesToRemove.sorted(by: >) {
         sortedCIDRs.remove(at: index)
     }
-    return sortedCIDRs.compactMap { cidr in
-        guard let mask = cidrToSubnetMask(cidr.networkLength) else {
-            logger.warning("buildIPv4Routes() invalid cidr length: \(cidr.networkLength, privacy: .public)")
-            return nil
-        }
-        return NEIPv4Route(destinationAddress: cidr.address.description, subnetMask: mask)
+    return sortedCIDRs
+}
+
+func cidrToRoute(_ cidr: RunningIPv4CIDR) -> NEIPv4Route? {
+    guard let mask = cidrToSubnetMask(cidr.networkLength) else {
+        logger.warning("buildIPv4Routes() invalid cidr length: \(cidr.networkLength, privacy: .public)")
+        return nil
     }
+    return NEIPv4Route(destinationAddress: cidr.address.description, subnetMask: mask)
+}
+
+/// IPv4 subnets currently assigned to the Wi-Fi interface (en0 and friends).
+/// The packet tunnel is a utun device, so these stay visible while the VPN runs.
+func localOnLinkIPv4Subnets() -> [RunningIPv4CIDR] {
+    var subnets = [RunningIPv4CIDR]()
+    var interfaces: UnsafeMutablePointer<ifaddrs>?
+    guard getifaddrs(&interfaces) == 0, let first = interfaces else {
+        logger.warning("localOnLinkIPv4Subnets() getifaddrs failed")
+        return subnets
+    }
+    defer { freeifaddrs(first) }
+
+    var cursor: UnsafeMutablePointer<ifaddrs>? = first
+    while let interface = cursor {
+        defer { cursor = interface.pointee.ifa_next }
+        let flags = Int32(interface.pointee.ifa_flags)
+        guard flags & IFF_UP != 0, flags & IFF_LOOPBACK == 0 else { continue }
+        let name = String(cString: interface.pointee.ifa_name)
+        // Wi-Fi only. Cellular masks are point-to-point /32s and excluding a
+        // carrier subnet would cut off the tunnel's own transport.
+        guard name.hasPrefix("en") else { continue }
+        guard let address = interface.pointee.ifa_addr,
+              address.pointee.sa_family == UInt8(AF_INET),
+              let netmask = interface.pointee.ifa_netmask,
+              netmask.pointee.sa_family == UInt8(AF_INET) else { continue }
+
+        var host = [CChar](repeating: 0, count: Int(NI_MAXHOST))
+        let result = getnameinfo(
+            address, socklen_t(address.pointee.sa_len),
+            &host, socklen_t(host.count),
+            nil, 0, NI_NUMERICHOST
+        )
+        let mask = netmask.withMemoryRebound(to: sockaddr_in.self, capacity: 1) {
+            UInt32(bigEndian: $0.pointee.sin_addr.s_addr)
+        }
+        let length = mask.nonzeroBitCount
+        let expected: UInt32 = length == 0 ? 0 : UInt32.max << (32 - length)
+        // Non-contiguous masks cannot be expressed as a CIDR, and /31+/32
+        // links carry no usable on-link subnet.
+        guard result == 0, length >= 8, length <= 30, mask == expected else { continue }
+        guard let cidr = RunningIPv4CIDR(from: String(cString: host) + "/\(length)") else { continue }
+        subnets.append(.init(address: ipv4MaskedSubnet(cidr), length: cidr.networkLength))
+    }
+    return subnets
+}
+
+/// On-link Wi-Fi subnets to keep out of the tunnel, minus anything that would
+/// cut the tunnel's own address or the magic-DNS route out of the VPN.
+func buildExcludedRouteCIDRs(tunnelAddress: String?) -> [RunningIPv4CIDR] {
+    let tunnel = tunnelAddress.flatMap { RunningIPv4CIDR(from: $0) }
+    var excluded = [RunningIPv4CIDR]()
+    for subnet in localOnLinkIPv4Subnets() {
+        if let tunnel, ipv4SubnetsOverlap(bigger: subnet, smaller: RunningIPv4CIDR(address: tunnel.address, length: 32)) {
+            logger.warning("buildExcludedRoutes() keep \(subnet.address.description, privacy: .public)/\(subnet.networkLength, privacy: .public) inside tunnel: holds tunnel address")
+            continue
+        }
+        if ipv4SubnetsOverlap(bigger: subnet, smaller: magicDNSCIDR) {
+            logger.warning("buildExcludedRoutes() keep \(subnet.address.description, privacy: .public)/\(subnet.networkLength, privacy: .public) inside tunnel: holds magic DNS")
+            continue
+        }
+        excluded.append(subnet)
+        logger.info("buildExcludedRoutes() exclude local subnet: \(subnet.address.description, privacy: .public)/\(subnet.networkLength, privacy: .public)")
+    }
+    return excluded
 }
 
 func buildDNSServers(options: EasyTierOptions) -> NEDNSSettings? {
